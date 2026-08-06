@@ -96,7 +96,12 @@
 <div id="addFlow">
   <div class="card" id="captureSection">
     <label>1. 拍照 / 選擇 PSA 鑑定卡照片</label>
-    <input type="file" id="fileInput" accept="image/*" capture="environment">
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;">
+    <input type="file" id="galleryInput" accept="image/*" style="display:none;">
+    <div class="row">
+      <button type="button" class="secondary" id="cameraBtn" style="margin-top:0;">📷 拍照</button>
+      <button type="button" class="secondary" id="galleryBtn" style="margin-top:0;">🖼 從相簿選擇</button>
+    </div>
     <img id="preview" alt="預覽">
     <button id="recognizeBtn" disabled>辨識卡牌</button>
     <div class="status" id="recognizeStatus"></div>
@@ -249,7 +254,8 @@
   let imageBase64 = '';
   let imageMime = '';
 
-  const fileInput = document.getElementById('fileInput');
+  const cameraInput = document.getElementById('cameraInput');
+  const galleryInput = document.getElementById('galleryInput');
   const preview = document.getElementById('preview');
   const recognizeBtn = document.getElementById('recognizeBtn');
   const recognizeStatus = document.getElementById('recognizeStatus');
@@ -283,8 +289,10 @@
     });
   }
 
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
+  document.getElementById('cameraBtn').addEventListener('click', () => cameraInput.click());
+  document.getElementById('galleryBtn').addEventListener('click', () => galleryInput.click());
+
+  async function handleFileSelected(file) {
     if (!file) return;
     const dataUrl = await compressImage(file);
     preview.src = dataUrl;
@@ -292,7 +300,10 @@
     imageMime = 'image/jpeg';
     imageBase64 = dataUrl.split(',')[1];
     recognizeBtn.disabled = false;
-  });
+  }
+
+  cameraInput.addEventListener('change', () => handleFileSelected(cameraInput.files[0]));
+  galleryInput.addEventListener('change', () => handleFileSelected(galleryInput.files[0]));
 
   recognizeBtn.addEventListener('click', async () => {
     if (!checkConfigured()) return;
@@ -325,7 +336,8 @@
   document.getElementById('cancelBtn').addEventListener('click', () => {
     confirmSection.style.display = 'none';
     captureSection.style.display = 'block';
-    fileInput.value = '';
+    cameraInput.value = '';
+    galleryInput.value = '';
     preview.style.display = 'none';
     recognizeBtn.disabled = true;
     recognizeStatus.className = 'status';
@@ -376,7 +388,8 @@
   document.getElementById('newBtn').addEventListener('click', () => {
     resultSection.style.display = 'none';
     captureSection.style.display = 'block';
-    fileInput.value = '';
+    cameraInput.value = '';
+    galleryInput.value = '';
     preview.style.display = 'none';
     imageBase64 = ''; imageMime = '';
     recognizeBtn.disabled = true;
