@@ -37,6 +37,7 @@
   .status.loading{display:block; background:#22262f; color:var(--muted);}
   .status.error{display:block; background:#3a1f1f; color:var(--bad);}
   .status.success{display:block; background:#1c332a; color:var(--ok);}
+  .status.warn{display:block; background:#3a2f14; color:#f2b84b;}
   .link{color:#7db8ff; text-decoration:none;}
   a.link{word-break:break-all;}
   #confirmSection, #resultSection, #inventorySection{display:none;}
@@ -172,6 +173,7 @@
 
     <label>PSA 鑑定編號</label>
     <input type="text" id="certNumber">
+    <div class="status" id="dupWarning"></div>
 
     <label>PSA 官方連結（自動產生）</label>
     <input type="text" id="psaUrl" readonly>
@@ -392,6 +394,7 @@
       setStatus(recognizeStatus, 'success', '辨識完成，請確認以下資料');
       captureSection.style.display = 'none';
       confirmSection.style.display = 'block';
+      checkDuplicateCert(f.certNumber, document.getElementById('dupWarning'));
     } catch (err) {
       setStatus(recognizeStatus, 'error', '辨識失敗: ' + err.message);
     } finally {
@@ -399,9 +402,27 @@
     }
   });
 
+  // 檢查 PSA 編號是否已經在庫存裡，避免同一張鑑定卡重複入庫
+  async function checkDuplicateCert(certNumber, warnEl) {
+    warnEl.className = 'status';
+    const cert = (certNumber || '').trim();
+    if (!cert || !checkConfigured()) return;
+    try {
+      const data = await callGAS({ action: 'checkCert', certNumber: cert });
+      if (data.exists) {
+        setStatus(warnEl, 'warn', `⚠️ 這個 PSA 編號已經在庫存中了！卡名：${data.card.cardTitle || '(未命名)'}（${data.card.status}）。請確認是否重複入庫。`);
+      }
+    } catch (err) {
+      // 檢查失敗不影響正常流程，安靜略過
+    }
+  }
+
+  let dupCheckTimer = null;
   document.getElementById('certNumber').addEventListener('input', (e) => {
     const cert = e.target.value.trim();
     document.getElementById('psaUrl').value = cert ? `https://www.psacard.com/cert/${cert}/psa` : '';
+    clearTimeout(dupCheckTimer);
+    dupCheckTimer = setTimeout(() => checkDuplicateCert(cert, document.getElementById('dupWarning')), 500);
   });
 
   document.getElementById('cancelBtn').addEventListener('click', () => {
@@ -468,6 +489,7 @@
     ['buyAmount','currentAmount'].forEach(id => document.getElementById(id).value = '');
     recognizeStatus.className = 'status';
     submitStatus.className = 'status';
+    document.getElementById('dupWarning').className = 'status';
   });
 
   // ---------- 批次新增（拼圖卡 / 打包合購） ----------
@@ -553,6 +575,17 @@
         } catch (err) {
           // 單張辨識失敗不中斷整批，讓使用者手動填
         }
+        // 檢查這張的 PSA 編號是否已經在庫存裡
+        try {
+          if (batchDrafts[i].certNumber) {
+            const dup = await callGAS({ action: 'checkCert', certNumber: batchDrafts[i].certNumber });
+            batchDrafts[i].dupWarning = dup.exists
+              ? `⚠️ 已在庫存中：${dup.card.cardTitle || '(未命名)'}（${dup.card.status}）`
+              : '';
+          }
+        } catch (err) {
+          // 檢查失敗不影響流程
+        }
       }
       batchCaptureStatus.className = 'status';
       renderBatchDraftList();
@@ -571,6 +604,7 @@
         <div class="item-body">
           <label style="margin-top:0;">PSA 鑑定編號</label>
           <input type="text" value="${d.certNumber || ''}" oninput="updateBatchDraft(${i},'certNumber',this.value)">
+          ${d.dupWarning ? `<div class="status warn">${d.dupWarning}</div>` : ''}
           <label>卡片標題</label>
           <input type="text" value="${d.cardTitle || ''}" oninput="updateBatchDraft(${i},'cardTitle',this.value)">
           <div class="row">
