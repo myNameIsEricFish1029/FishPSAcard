@@ -105,6 +105,66 @@
     <img id="preview" alt="預覽">
     <button id="recognizeBtn" disabled>辨識卡牌</button>
     <div class="status" id="recognizeStatus"></div>
+    <div class="hint" style="margin-top:12px;">拼圖卡或一次買好幾張算一個總價？<a class="link" href="javascript:void(0)" id="goBatchBtn">改用批次新增 →</a></div>
+  </div>
+
+  <!-- ============ 批次新增（拼圖卡 / 打包合購） ============ -->
+  <div class="card" id="batchCaptureSection" style="display:none;">
+    <label>🧩 批次新增：選擇這組的所有照片</label>
+    <div class="hint">適合拼圖卡（多張拼成一張圖）或一次買好幾張只算一個總價的情況</div>
+    <input type="file" id="batchGalleryInput" accept="image/*" multiple style="display:none;">
+    <input type="file" id="batchCameraInput" accept="image/*" capture="environment" style="display:none;">
+    <div class="row" style="margin-top:10px;">
+      <button type="button" class="secondary" id="batchGalleryBtn" style="margin-top:0;">🖼 從相簿多選</button>
+      <button type="button" class="secondary" id="batchCameraBtn" style="margin-top:0;">📷 拍照加入</button>
+    </div>
+    <div id="batchThumbs" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;"></div>
+    <button id="batchRecognizeBtn" disabled>辨識全部（<span id="batchCount">0</span> 張）</button>
+    <button class="secondary" id="batchCancelBtn">取消，回到單張新增</button>
+    <div class="status" id="batchCaptureStatus"></div>
+  </div>
+
+  <div class="card" id="batchReviewSection" style="display:none;">
+    <label>確認每張卡的資料</label>
+    <div id="batchDraftList"></div>
+
+    <label style="margin-top:16px;">這組怎麼算價格？</label>
+    <select id="groupType">
+      <option value="拼圖">🧩 拼圖卡（多張拼一張圖，只能整組一起賣）</option>
+      <option value="打包">📦 打包一起買（一次買好幾張算一個總價，之後可以拆開分別賣）</option>
+    </select>
+
+    <label>總買入金額（這組全部卡片合計）</label>
+    <div class="row">
+      <input type="number" id="batchBuyAmount" placeholder="金額" step="0.01">
+      <select id="batchBuyCurrency">
+        <option value="JPY">JPY 日圓</option>
+        <option value="USD">USD 美金</option>
+        <option value="TWD">TWD 台幣</option>
+      </select>
+    </div>
+
+    <label>總現在市值（選填）</label>
+    <div class="row">
+      <input type="number" id="batchCurrentAmount" placeholder="金額" step="0.01">
+      <select id="batchCurrentCurrency">
+        <option value="JPY">JPY 日圓</option>
+        <option value="USD">USD 美金</option>
+        <option value="TWD">TWD 台幣</option>
+      </select>
+    </div>
+    <div class="hint">這個總額會顯示在組內每一張卡上，總覽的總成本/總市值只會計算一次，不會重複相加</div>
+
+    <button id="batchSubmitBtn">送出整組（<span id="batchSubmitCount">0</span> 張）</button>
+    <button class="secondary" id="batchBackBtn">上一步</button>
+    <div class="status" id="batchSubmitStatus"></div>
+  </div>
+
+  <div class="card" id="batchResultSection" style="display:none;">
+    <label>✅ 已成功入庫一整組</label>
+    <div class="hint" id="batchResultText"></div>
+    <button id="batchNewBtn">再新增一組</button>
+    <button class="secondary" id="batchGoInventoryBtn">查看庫存</button>
   </div>
 
   <div class="card" id="confirmSection">
@@ -119,19 +179,22 @@
     <label>卡片標題</label>
     <input type="text" id="cardTitle">
 
-    <label>系列 / 年份</label>
+    <label>系列 / 年份說明</label>
     <input type="text" id="setInfo">
 
     <div class="row">
       <div>
-        <label>卡號</label>
-        <input type="text" id="cardNumber">
+        <label>卡牌年份</label>
+        <input type="text" id="cardYear" placeholder="例如 2018" inputmode="numeric">
       </div>
       <div>
         <label>鑑定分數</label>
         <input type="text" id="grade">
       </div>
     </div>
+
+    <label>卡號（卡片本身印刷的，如 265/190 S 或 063/060 SR）</label>
+    <input type="text" id="cardNumber" placeholder="辨識不出來可以手動輸入">
 
     <label>3. 買入金額</label>
     <div class="row">
@@ -201,6 +264,12 @@
         <option value="all">全部</option>
         <option value="在庫">只看在庫</option>
         <option value="已售出">只看已售出</option>
+      </select>
+      <select id="sortSelect">
+        <option value="default">排序：新增時間</option>
+        <option value="certAsc">排序：PSA編號（小→大）</option>
+        <option value="yearAsc">排序：年份（舊→新）</option>
+        <option value="yearDesc">排序：年份（新→舊）</option>
       </select>
     </div>
     <div class="status" id="inventoryStatus"></div>
@@ -319,6 +388,7 @@
       document.getElementById('setInfo').value = f.setInfo;
       document.getElementById('cardNumber').value = f.cardNumber;
       document.getElementById('grade').value = f.grade;
+      document.getElementById('cardYear').value = f.year || '';
       setStatus(recognizeStatus, 'success', '辨識完成，請確認以下資料');
       captureSection.style.display = 'none';
       confirmSection.style.display = 'block';
@@ -359,6 +429,7 @@
         setInfo: document.getElementById('setInfo').value.trim(),
         cardNumber: document.getElementById('cardNumber').value.trim(),
         grade: document.getElementById('grade').value.trim(),
+        year: document.getElementById('cardYear').value.trim(),
         buyAmount: document.getElementById('buyAmount').value,
         buyCurrency: document.getElementById('buyCurrency').value,
         currentAmount: document.getElementById('currentAmount').value,
@@ -399,12 +470,200 @@
     submitStatus.className = 'status';
   });
 
+  // ---------- 批次新增（拼圖卡 / 打包合購） ----------
+  let batchDrafts = []; // { imageBase64, imageMime, previewUrl, certNumber, cardTitle, setInfo, cardNumber, grade, year }
+
+  const batchCaptureSection = document.getElementById('batchCaptureSection');
+  const batchReviewSection = document.getElementById('batchReviewSection');
+  const batchResultSection = document.getElementById('batchResultSection');
+  const batchGalleryInput = document.getElementById('batchGalleryInput');
+  const batchCameraInput = document.getElementById('batchCameraInput');
+  const batchThumbs = document.getElementById('batchThumbs');
+  const batchRecognizeBtn = document.getElementById('batchRecognizeBtn');
+  const batchCaptureStatus = document.getElementById('batchCaptureStatus');
+
+  function showBatchCapture() {
+    captureSection.style.display = 'none';
+    confirmSection.style.display = 'none';
+    resultSection.style.display = 'none';
+    batchReviewSection.style.display = 'none';
+    batchResultSection.style.display = 'none';
+    batchCaptureSection.style.display = 'block';
+  }
+
+  document.getElementById('goBatchBtn').addEventListener('click', showBatchCapture);
+
+  document.getElementById('batchCancelBtn').addEventListener('click', () => {
+    batchDrafts = [];
+    renderBatchThumbs();
+    batchCaptureSection.style.display = 'none';
+    captureSection.style.display = 'block';
+  });
+
+  document.getElementById('batchGalleryBtn').addEventListener('click', () => batchGalleryInput.click());
+  document.getElementById('batchCameraBtn').addEventListener('click', () => batchCameraInput.click());
+
+  async function addBatchFiles(fileList) {
+    for (const file of fileList) {
+      const dataUrl = await compressImage(file);
+      batchDrafts.push({
+        imageBase64: dataUrl.split(',')[1],
+        imageMime: 'image/jpeg',
+        previewUrl: dataUrl,
+        certNumber: '', cardTitle: '', setInfo: '', cardNumber: '', grade: '', year: ''
+      });
+    }
+    renderBatchThumbs();
+  }
+
+  batchGalleryInput.addEventListener('change', () => {
+    addBatchFiles(Array.from(batchGalleryInput.files));
+    batchGalleryInput.value = '';
+  });
+  batchCameraInput.addEventListener('change', () => {
+    addBatchFiles(Array.from(batchCameraInput.files));
+    batchCameraInput.value = '';
+  });
+
+  function renderBatchThumbs() {
+    batchThumbs.innerHTML = batchDrafts.map((d, i) => `
+      <div style="position:relative;">
+        <img src="${d.previewUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;">
+        <button type="button" onclick="removeBatchDraft(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;margin:0;border-radius:50%;font-size:12px;line-height:1;background:var(--bad);">✕</button>
+      </div>
+    `).join('');
+    document.getElementById('batchCount').textContent = batchDrafts.length;
+    batchRecognizeBtn.disabled = batchDrafts.length === 0;
+  }
+
+  window.removeBatchDraft = function(i) {
+    batchDrafts.splice(i, 1);
+    renderBatchThumbs();
+  };
+
+  batchRecognizeBtn.addEventListener('click', async () => {
+    if (!checkConfigured()) return;
+    batchRecognizeBtn.disabled = true;
+    try {
+      for (let i = 0; i < batchDrafts.length; i++) {
+        setStatus(batchCaptureStatus, 'loading', `辨識中 (${i + 1}/${batchDrafts.length})...`);
+        try {
+          const data = await callGAS({ action: 'recognize', image: batchDrafts[i].imageBase64, mimeType: batchDrafts[i].imageMime });
+          Object.assign(batchDrafts[i], data.fields, { year: data.fields.year || '' });
+        } catch (err) {
+          // 單張辨識失敗不中斷整批，讓使用者手動填
+        }
+      }
+      batchCaptureStatus.className = 'status';
+      renderBatchDraftList();
+      batchCaptureSection.style.display = 'none';
+      batchReviewSection.style.display = 'block';
+    } finally {
+      batchRecognizeBtn.disabled = false;
+    }
+  });
+
+  function renderBatchDraftList() {
+    const list = document.getElementById('batchDraftList');
+    list.innerHTML = batchDrafts.map((d, i) => `
+      <div class="item" style="align-items:flex-start;">
+        <img class="thumb" src="${d.previewUrl}" alt="">
+        <div class="item-body">
+          <label style="margin-top:0;">PSA 鑑定編號</label>
+          <input type="text" value="${d.certNumber || ''}" oninput="updateBatchDraft(${i},'certNumber',this.value)">
+          <label>卡片標題</label>
+          <input type="text" value="${d.cardTitle || ''}" oninput="updateBatchDraft(${i},'cardTitle',this.value)">
+          <div class="row">
+            <div>
+              <label>卡牌年份</label>
+              <input type="text" value="${d.year || ''}" oninput="updateBatchDraft(${i},'year',this.value)">
+            </div>
+            <div>
+              <label>鑑定分數</label>
+              <input type="text" value="${d.grade || ''}" oninput="updateBatchDraft(${i},'grade',this.value)">
+            </div>
+          </div>
+          <label>卡號（卡片本身印刷的）</label>
+          <input type="text" value="${d.cardNumber || ''}" oninput="updateBatchDraft(${i},'cardNumber',this.value)">
+          <button class="danger small" type="button" onclick="removeBatchDraft(${i}); renderBatchDraftList();" style="margin-top:10px;">移除這張</button>
+        </div>
+      </div>
+    `).join('');
+    document.getElementById('batchSubmitCount').textContent = batchDrafts.length;
+  }
+
+  window.updateBatchDraft = function(i, field, value) {
+    if (batchDrafts[i]) batchDrafts[i][field] = value;
+  };
+
+  document.getElementById('batchBackBtn').addEventListener('click', () => {
+    batchReviewSection.style.display = 'none';
+    batchCaptureSection.style.display = 'block';
+  });
+
+  document.getElementById('batchSubmitBtn').addEventListener('click', async () => {
+    if (!checkConfigured()) return;
+    if (batchDrafts.length === 0) return;
+    const buyAmount = document.getElementById('batchBuyAmount').value;
+    if (!buyAmount) { alert('請輸入總買入金額'); return; }
+    const btn = document.getElementById('batchSubmitBtn');
+    btn.disabled = true;
+
+    const groupId = (crypto.randomUUID ? crypto.randomUUID() : ('grp-' + Date.now() + '-' + Math.random().toString(36).slice(2)));
+    const groupType = document.getElementById('groupType').value;
+    const buyCurrency = document.getElementById('batchBuyCurrency').value;
+    const currentAmount = document.getElementById('batchCurrentAmount').value;
+    const currentCurrency = document.getElementById('batchCurrentCurrency').value;
+
+    let successCount = 0;
+    for (let i = 0; i < batchDrafts.length; i++) {
+      setStatus(document.getElementById('batchSubmitStatus'), 'loading', `送出中 (${i + 1}/${batchDrafts.length})...`);
+      try {
+        const d = batchDrafts[i];
+        await callGAS({
+          action: 'submit',
+          image: d.imageBase64,
+          mimeType: d.imageMime,
+          certNumber: (d.certNumber || '').trim(),
+          cardTitle: (d.cardTitle || '').trim(),
+          setInfo: (d.setInfo || '').trim(),
+          cardNumber: (d.cardNumber || '').trim(),
+          grade: (d.grade || '').trim(),
+          year: (d.year || '').trim(),
+          buyAmount, buyCurrency, currentAmount, currentCurrency,
+          groupId, groupType
+        });
+        successCount++;
+      } catch (err) {
+        // 單張送出失敗不中斷整批
+      }
+    }
+
+    btn.disabled = false;
+    document.getElementById('batchSubmitStatus').className = 'status';
+    document.getElementById('batchResultText').textContent =
+      `已成功入庫 ${successCount} / ${batchDrafts.length} 張，分類為「${groupType}」，共用一筆總成本/總市值。`;
+    batchReviewSection.style.display = 'none';
+    batchResultSection.style.display = 'block';
+  });
+
+  document.getElementById('batchGoInventoryBtn').addEventListener('click', () => tabInventory.click());
+
+  document.getElementById('batchNewBtn').addEventListener('click', () => {
+    batchDrafts = [];
+    renderBatchThumbs();
+    ['batchBuyAmount', 'batchCurrentAmount'].forEach(id => document.getElementById(id).value = '');
+    batchResultSection.style.display = 'none';
+    batchCaptureSection.style.display = 'block';
+  });
+
   // ---------- 庫存列表 ----------
   let allCards = [];
   const itemList = document.getElementById('itemList');
   const inventoryStatus = document.getElementById('inventoryStatus');
   const searchInput = document.getElementById('searchInput');
   const statusFilter = document.getElementById('statusFilter');
+  const sortSelect = document.getElementById('sortSelect');
 
   async function loadInventory() {
     if (!checkConfigured()) return;
@@ -434,15 +693,33 @@
     return v !== '' && v !== null && v !== undefined && !isNaN(Number(v)) && Number(v) !== 0;
   }
 
+  // 拼圖卡/打包卡共用同一筆總成本、總市值，同一個 groupId 只留第一筆代表列，
+  // 避免計算總覽時把同一筆錢重複加好幾次。
+  function dedupeByGroup(cards) {
+    const seen = new Set();
+    const result = [];
+    cards.forEach(c => {
+      if (c.groupId) {
+        if (seen.has(c.groupId)) return;
+        seen.add(c.groupId);
+      }
+      result.push(c);
+    });
+    return result;
+  }
+
   // 股票 App 風格的總覽：總成本 / 總市值 / 未實現損益% / 已實現損益
   function renderSummary(cards) {
     const inStock = cards.filter(c => c.status !== '已售出');
     const sold = cards.filter(c => c.status === '已售出');
 
-    const totalCost = inStock.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
-    const pricedCards = inStock.filter(c => hasValue(c.currentAmount));
-    const pricedCost = pricedCards.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
-    const totalValue = pricedCards.reduce((s, c) => s + (Number(c.currentTWD) || 0), 0);
+    const inStockDeduped = dedupeByGroup(inStock);
+    const totalCost = inStockDeduped.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
+
+    const pricedCards = inStock.filter(c => hasValue(c.currentAmount)); // 用實際張數顯示涵蓋率
+    const pricedCardsDeduped = dedupeByGroup(pricedCards); // 用去重後的組別算錢
+    const pricedCost = pricedCardsDeduped.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
+    const totalValue = pricedCardsDeduped.reduce((s, c) => s + (Number(c.currentTWD) || 0), 0);
 
     document.getElementById('sumTotalCost').textContent = fmtTWD(totalCost);
     document.getElementById('sumTotalValue').textContent = pricedCards.length ? fmtTWD(totalValue) : '尚無資料';
@@ -467,8 +744,9 @@
 
     const realizedEl = document.getElementById('sumRealized');
     if (sold.length) {
-      const soldCost = sold.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
-      const soldValue = sold.reduce((s, c) => s + (Number(c.soldTWD) || 0), 0);
+      const soldDeduped = dedupeByGroup(sold);
+      const soldCost = soldDeduped.reduce((s, c) => s + (Number(c.buyTWD) || 0), 0);
+      const soldValue = soldDeduped.reduce((s, c) => s + (Number(c.soldTWD) || 0), 0);
       const realizedTWD = soldValue - soldCost;
       const realizedPct = soldCost ? (realizedTWD / soldCost * 100) : null;
       realizedEl.textContent = `已實現損益（已售出 ${sold.length} 張）：${fmtSignedTWD(realizedTWD)}` +
@@ -481,12 +759,22 @@
   function renderList() {
     const kw = searchInput.value.trim().toLowerCase();
     const st = statusFilter.value;
+    const sortBy = sortSelect.value;
     const filtered = allCards.filter(c => {
       if (st !== 'all' && c.status !== st) return false;
       if (!kw) return true;
-      const hay = `${c.certNumber} ${c.cardTitle} ${c.setInfo}`.toLowerCase();
+      const hay = `${c.certNumber} ${c.cardTitle} ${c.setInfo} ${c.cardNumber}`.toLowerCase();
       return hay.includes(kw);
     });
+
+    if (sortBy === 'certAsc') {
+      filtered.sort((a, b) => (Number(a.certNumber) || 0) - (Number(b.certNumber) || 0));
+    } else if (sortBy === 'yearAsc') {
+      filtered.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
+    } else if (sortBy === 'yearDesc') {
+      filtered.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
+    }
+    // sortBy === 'default' 時維持後端回傳的順序（新增時間新→舊）
 
     if (filtered.length === 0) {
       itemList.innerHTML = '<div class="empty">目前沒有符合的卡牌</div>';
@@ -501,6 +789,11 @@
       const badge = isSold
         ? '<span class="badge sold">已售出</span>'
         : '<span class="badge instock">在庫</span>';
+      const groupBadge = c.groupId
+        ? (c.groupType === '拼圖'
+            ? '<span class="badge instock">🧩 拼圖組</span>'
+            : '<span class="badge instock">📦 打包組</span>')
+        : '';
 
       let profitHtml = '-';
       if (isSold && c.realizedProfitPct !== '' && c.realizedProfitPct !== undefined) {
@@ -514,12 +807,15 @@
       const rightAmount = isSold ? fmtTWD(c.soldTWD) : fmtTWD(c.currentTWD);
       const rightLabel = isSold ? '售出' : '現在';
 
+      const metaParts = [c.year, c.certNumber || '-', c.cardNumber, c.grade || '-', c.setInfo]
+        .filter(v => v !== '' && v !== undefined && v !== null);
+
       return `
         <div class="item" data-id="${c.id}">
           ${thumbSrc ? `<img class="thumb" src="${thumbSrc}" alt="">` : '<div class="thumb"></div>'}
           <div class="item-body">
-            <div class="item-title">${c.cardTitle || '(未命名)'} ${badge}</div>
-            <div class="item-meta">${c.certNumber || '-'} · ${c.grade || '-'} · ${c.setInfo || ''}</div>
+            <div class="item-title">${c.cardTitle || '(未命名)'} ${badge} ${groupBadge}</div>
+            <div class="item-meta">${metaParts.join(' · ')}</div>
             <div class="item-amounts">
               <span>買入 ${fmtTWD(c.buyTWD)}</span>
               <span>${rightLabel} ${rightAmount}</span>
@@ -527,13 +823,30 @@
             </div>
             <div class="item-actions">
               <a class="link" href="${c.psaUrl}" target="_blank"><button class="secondary small" type="button">PSA 官網</button></a>
+              ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleValueForm('${c.id}')">編輯市值</button>`}
               ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleSoldForm('${c.id}')">標記售出</button>`}
               <button class="danger small" type="button" onclick="handleDelete('${c.id}')">刪除</button>
             </div>
+            ${(!isSold && c.groupType === '拼圖') ? '<div class="hint">🧩 拼圖組：編輯市值 / 標記售出會套用到整組</div>' : ''}
+            ${isSold ? '' : `
+            <div class="sold-form" id="valueform-${c.id}">
+              <div class="row">
+                <input type="number" placeholder="現在金額（留空＝清除市值）" step="0.01" id="valueAmount-${c.id}" value="${c.currentAmount || ''}">
+                <select id="valueCurrency-${c.id}">
+                  <option value="JPY" ${c.currentCurrency === 'JPY' || !c.currentCurrency ? 'selected' : ''}>JPY</option>
+                  <option value="USD" ${c.currentCurrency === 'USD' ? 'selected' : ''}>USD</option>
+                  <option value="TWD" ${c.currentCurrency === 'TWD' ? 'selected' : ''}>TWD</option>
+                </select>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <button class="small" type="button" onclick="confirmValue('${c.id}')">確認更新</button>
+                <button class="secondary small" type="button" onclick="toggleValueForm('${c.id}')">取消</button>
+              </div>
+            </div>`}
             ${isSold ? '' : `
             <div class="sold-form" id="soldform-${c.id}">
               <div class="row">
-                <input type="number" placeholder="售出金額" step="0.01" id="soldAmount-${c.id}">
+                <input type="number" placeholder="售出金額（選填，留空僅標記已售出）" step="0.01" id="soldAmount-${c.id}">
                 <select id="soldCurrency-${c.id}">
                   <option value="JPY">JPY</option>
                   <option value="USD">USD</option>
@@ -561,7 +874,7 @@
     const amount = document.getElementById(`soldAmount-${id}`).value;
     const currency = document.getElementById(`soldCurrency-${id}`).value;
     const date = document.getElementById(`soldDate-${id}`).value;
-    if (!amount) { alert('請輸入售出金額'); return; }
+    // 售出金額選填：留空代表只標記已售出，不記錄賣多少錢（例如送人、交換）
     setStatus(inventoryStatus, 'loading', '更新中...');
     try {
       await callGAS({ action: 'markSold', id, soldAmount: amount, soldCurrency: currency, soldDate: date });
@@ -569,6 +882,24 @@
       loadInventory();
     } catch (err) {
       setStatus(inventoryStatus, 'error', '更新失敗: ' + err.message);
+    }
+  };
+
+  window.toggleValueForm = function(id) {
+    const el = document.getElementById(`valueform-${id}`);
+    if (el) el.classList.toggle('open');
+  };
+
+  window.confirmValue = async function(id) {
+    const amount = document.getElementById(`valueAmount-${id}`).value;
+    const currency = document.getElementById(`valueCurrency-${id}`).value;
+    setStatus(inventoryStatus, 'loading', '更新市值中...');
+    try {
+      await callGAS({ action: 'updateValue', id, currentAmount: amount, currentCurrency: currency });
+      inventoryStatus.className = 'status';
+      loadInventory();
+    } catch (err) {
+      setStatus(inventoryStatus, 'error', '更新市值失敗: ' + err.message);
     }
   };
 
@@ -587,6 +918,7 @@
   document.getElementById('refreshBtn').addEventListener('click', loadInventory);
   searchInput.addEventListener('input', renderList);
   statusFilter.addEventListener('change', renderList);
+  sortSelect.addEventListener('change', renderList);
 
   document.getElementById('updateRatesBtn').addEventListener('click', async () => {
     const btn = document.getElementById('updateRatesBtn');
