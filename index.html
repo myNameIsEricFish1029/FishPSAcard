@@ -188,6 +188,7 @@
     </div>
     <div class="hint" id="sumCoverage" style="margin-top:8px;">已輸入市值 0 / 0 張</div>
     <div class="hint" id="sumRealized"></div>
+    <button class="secondary" id="updateRatesBtn" style="margin-top:14px;">💱 更新全部匯率</button>
   </div>
 
   <div class="card">
@@ -586,6 +587,21 @@
   document.getElementById('refreshBtn').addEventListener('click', loadInventory);
   searchInput.addEventListener('input', renderList);
   statusFilter.addEventListener('change', renderList);
+
+  document.getElementById('updateRatesBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('updateRatesBtn');
+    btn.disabled = true;
+    setStatus(inventoryStatus, 'loading', '正在查詢最新匯率並重算市值...');
+    try {
+      const data = await callGAS({ action: 'refreshRates' });
+      await loadInventory();
+      setStatus(inventoryStatus, 'success', `已用最新匯率更新 ${data.updated} 張在庫卡片的市值與損益`);
+    } catch (err) {
+      setStatus(inventoryStatus, 'error', '更新匯率失敗: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 </script>
 
 </body>
