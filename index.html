@@ -218,6 +218,10 @@
       </select>
     </div>
     <div class="hint">兩者皆會依送出當下的即時匯率自動換算成 TWD 並計算損益</div>
+    <div class="row">
+      <button type="button" class="secondary small" id="checkEbayBtn" style="margin-top:8px;">🔍 查 eBay 已售出行情</button>
+      <button type="button" class="secondary small" id="checkGoogleBtn" style="margin-top:8px;">🔍 查行情(Google)</button>
+    </div>
 
     <button id="submitBtn">送出入庫</button>
     <button class="secondary" id="cancelBtn">重新拍照</button>
@@ -305,6 +309,61 @@
     return true;
   }
 
+  // ---------- 免費離線 OCR 備援（Gemini 額度用完時自動切換）----------
+  function isQuotaError(err) {
+    const msg = ((err && err.message) || '').toLowerCase();
+    return msg.includes('429') || msg.includes('resource_exhausted') || msg.includes('quota');
+  }
+
+  let tesseractLoading = null;
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    if (tesseractLoading) return tesseractLoading;
+    tesseractLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('OCR 函式庫載入失敗，請檢查網路連線'));
+      document.head.appendChild(s);
+    });
+    return tesseractLoading;
+  }
+
+  // 純規則比對：從 OCR 出來的一大段文字裡，抓出鑑定編號 / 年份 / 分數
+  function parseOcrText(text) {
+    const certMatch = text.match(/\b\d{8,9}\b/);
+    const yearMatch = text.match(/\b(19|20)\d{2}\b/);
+    const gradeMatch = text.match(/(GEM\s*MT|MINT|NM[\s-]?MT|EX[\s-]?MT|VG[\s-]?EX|GOOD|FAIR|POOR|AUTHENTIC)\s*\d{0,2}/i);
+    const certNumber = certMatch ? certMatch[0] : '';
+    return {
+      certNumber,
+      cardTitle: '',
+      setInfo: '',
+      cardNumber: '',
+      grade: gradeMatch ? gradeMatch[0].replace(/\s+/g, ' ').trim() : '',
+      year: yearMatch ? yearMatch[0] : '',
+      psaUrl: certNumber ? `https://www.psacard.com/cert/${certNumber}/psa` : ''
+    };
+  }
+
+  async function tesseractRecognizeFallback(dataUrl) {
+    await loadTesseract();
+    const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
+    return parseOcrText(text);
+  }
+
+  // 先試 Gemini，額度用完(429)才自動切換成免費離線 OCR；其他錯誤照常丟出
+  async function recognizeWithFallback(imageBase64, mimeType, dataUrl) {
+    try {
+      const data = await callGAS({ action: 'recognize', image: imageBase64, mimeType });
+      return { fields: data.fields, usedFallback: false };
+    } catch (err) {
+      if (!isQuotaError(err)) throw err;
+      const fields = await tesseractRecognizeFallback(dataUrl);
+      return { fields, usedFallback: true };
+    }
+  }
+
   // ---------- Tabs ----------
   const tabAdd = document.getElementById('tabAdd');
   const tabInventory = document.getElementById('tabInventory');
@@ -382,8 +441,7 @@
     recognizeBtn.disabled = true;
     setStatus(recognizeStatus, 'loading', '辨識中，請稍候...');
     try {
-      const data = await callGAS({ action: 'recognize', image: imageBase64, mimeType: imageMime });
-      const f = data.fields;
+      const { fields: f, usedFallback } = await recognizeWithFallback(imageBase64, imageMime, preview.src);
       document.getElementById('certNumber').value = f.certNumber;
       document.getElementById('psaUrl').value = f.psaUrl;
       document.getElementById('cardTitle').value = f.cardTitle;
@@ -391,7 +449,11 @@
       document.getElementById('cardNumber').value = f.cardNumber;
       document.getElementById('grade').value = f.grade;
       document.getElementById('cardYear').value = f.year || '';
-      setStatus(recognizeStatus, 'success', '辨識完成，請確認以下資料');
+      if (usedFallback) {
+        setStatus(recognizeStatus, 'warn', '⚠️ Gemini 額度已用完，已自動切換成免費離線 OCR。只抓得到編號/年份/分數，其餘欄位請手動輸入，並仔細核對所有欄位');
+      } else {
+        setStatus(recognizeStatus, 'success', '辨識完成，請確認以下資料');
+      }
       captureSection.style.display = 'none';
       confirmSection.style.display = 'block';
       checkDuplicateCert(f.certNumber, document.getElementById('dupWarning'));
@@ -423,6 +485,20 @@
     document.getElementById('psaUrl').value = cert ? `https://www.psacard.com/cert/${cert}/psa` : '';
     clearTimeout(dupCheckTimer);
     dupCheckTimer = setTimeout(() => checkDuplicateCert(cert, document.getElementById('dupWarning')), 500);
+  });
+
+  function buildPriceQuery() {
+    const title = document.getElementById('cardTitle').value.trim();
+    const setInfo = document.getElementById('setInfo').value.trim();
+    return encodeURIComponent(`${title} ${setInfo}`.trim());
+  }
+  document.getElementById('checkEbayBtn').addEventListener('click', () => {
+    const q = buildPriceQuery();
+    window.open(`https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`, '_blank');
+  });
+  document.getElementById('checkGoogleBtn').addEventListener('click', () => {
+    const q = buildPriceQuery();
+    window.open(`https://www.google.com/search?q=${q}+相場`, '_blank');
   });
 
   document.getElementById('cancelBtn').addEventListener('click', () => {
@@ -570,8 +646,11 @@
       for (let i = 0; i < batchDrafts.length; i++) {
         setStatus(batchCaptureStatus, 'loading', `辨識中 (${i + 1}/${batchDrafts.length})...`);
         try {
-          const data = await callGAS({ action: 'recognize', image: batchDrafts[i].imageBase64, mimeType: batchDrafts[i].imageMime });
-          Object.assign(batchDrafts[i], data.fields, { year: data.fields.year || '' });
+          const { fields, usedFallback } = await recognizeWithFallback(
+            batchDrafts[i].imageBase64, batchDrafts[i].imageMime, batchDrafts[i].previewUrl
+          );
+          Object.assign(batchDrafts[i], fields);
+          if (usedFallback) batchDrafts[i].usedFallback = true;
         } catch (err) {
           // 單張辨識失敗不中斷整批，讓使用者手動填
         }
@@ -605,6 +684,7 @@
           <label style="margin-top:0;">PSA 鑑定編號</label>
           <input type="text" value="${d.certNumber || ''}" oninput="updateBatchDraft(${i},'certNumber',this.value)">
           ${d.dupWarning ? `<div class="status warn">${d.dupWarning}</div>` : ''}
+          ${d.usedFallback ? '<div class="status warn">⚠️ 額度用完，這張是用免費 OCR 辨識的，請仔細核對</div>' : ''}
           <label>卡片標題</label>
           <input type="text" value="${d.cardTitle || ''}" oninput="updateBatchDraft(${i},'cardTitle',this.value)">
           <div class="row">
@@ -841,6 +921,11 @@
       const rightAmount = isSold ? fmtTWD(c.soldTWD) : fmtTWD(c.currentTWD);
       const rightLabel = isSold ? '售出' : '現在';
 
+      // 查行情快速連結（自動化爬蟲不可行，改用手動查價捷徑）
+      const priceQuery = encodeURIComponent(`${c.cardTitle || ''} ${c.setInfo || ''}`.trim());
+      const ebayUrl = `https://www.ebay.com/sch/i.html?_nkw=${priceQuery}&LH_Sold=1&LH_Complete=1`;
+      const googleUrl = `https://www.google.com/search?q=${priceQuery}+相場`;
+
       const metaParts = [c.year, c.certNumber || '-', c.cardNumber, c.grade || '-', c.setInfo]
         .filter(v => v !== '' && v !== undefined && v !== null);
 
@@ -857,6 +942,8 @@
             </div>
             <div class="item-actions">
               <a class="link" href="${c.psaUrl}" target="_blank"><button class="secondary small" type="button">PSA 官網</button></a>
+              <a class="link" href="${ebayUrl}" target="_blank"><button class="secondary small" type="button">eBay 已售出</button></a>
+              <a class="link" href="${googleUrl}" target="_blank"><button class="secondary small" type="button">查行情</button></a>
               ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleValueForm('${c.id}')">編輯市值</button>`}
               ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleSoldForm('${c.id}')">標記售出</button>`}
               <button class="danger small" type="button" onclick="handleDelete('${c.id}')">刪除</button>
