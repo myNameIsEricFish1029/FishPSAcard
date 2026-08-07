@@ -62,7 +62,10 @@
   .badge.instock{background:#1c332a; color:var(--ok);}
   .badge.sold{background:#2a2e37; color:var(--muted);}
   .item-amounts{display:flex; justify-content:space-between; font-size:13px; margin-top:6px;}
-  .item-actions{display:flex; gap:6px; margin-top:8px;}
+  .item-links{font-size:12px; margin-top:6px; line-height:1.8;}
+  .item-links a{margin-right:10px; white-space:nowrap;}
+  .item-actions{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .item-actions button{white-space:nowrap;}
   .sold-form{margin-top:10px; padding-top:10px; border-top:1px solid var(--line); display:none;}
   .sold-form.open{display:block;}
   .empty{text-align:center; color:var(--muted); padding:30px 0; font-size:14px;}
@@ -218,9 +221,10 @@
       </select>
     </div>
     <div class="hint">兩者皆會依送出當下的即時匯率自動換算成 TWD 並計算損益</div>
-    <div class="row">
-      <button type="button" class="secondary small" id="checkEbayBtn" style="margin-top:8px;">🔍 查 eBay 已售出行情</button>
-      <button type="button" class="secondary small" id="checkGoogleBtn" style="margin-top:8px;">🔍 查行情(Google)</button>
+    <div class="row" style="flex-wrap:wrap;">
+      <button type="button" class="secondary small" id="checkGotcgsBtn" style="margin-top:8px;">🔍 GO TCGS 查價</button>
+      <button type="button" class="secondary small" id="checkEbayBtn" style="margin-top:8px;">🔍 查 eBay 已售出</button>
+      <button type="button" class="secondary small" id="checkGoogleBtn" style="margin-top:8px;">🔍 Google 查行情</button>
     </div>
 
     <button id="submitBtn">送出入庫</button>
@@ -242,6 +246,7 @@
 <!-- ============ 庫存列表 ============ -->
 <div id="inventorySection">
   <div class="card" id="summaryCard">
+    <div class="hint" id="sumFilterNote" style="color:#f2b84b;"></div>
     <div class="hint">未實現損益（在庫）</div>
     <div class="big-pct" id="sumUnrealizedPct">-</div>
     <div class="hint" id="sumUnrealizedTWD"></div>
@@ -276,6 +281,8 @@
         <option value="certAsc">排序：PSA編號（小→大）</option>
         <option value="yearAsc">排序：年份（舊→新）</option>
         <option value="yearDesc">排序：年份（新→舊）</option>
+        <option value="profitDesc">排序：損益%（高→低）</option>
+        <option value="profitAsc">排序：損益%（低→高）</option>
       </select>
     </div>
     <div class="status" id="inventoryStatus"></div>
@@ -492,6 +499,10 @@
     const setInfo = document.getElementById('setInfo').value.trim();
     return encodeURIComponent(`${title} ${setInfo}`.trim());
   }
+  document.getElementById('checkGotcgsBtn').addEventListener('click', () => {
+    const q = buildPriceQuery();
+    window.open(`https://gotcgs.com/search?q=${q}`, '_blank');
+  });
   document.getElementById('checkEbayBtn').addEventListener('click', () => {
     const q = buildPriceQuery();
     window.open(`https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Sold=1&LH_Complete=1`, '_blank');
@@ -787,8 +798,7 @@
       const data = await callGAS({ action: 'list' });
       allCards = data.cards;
       inventoryStatus.className = 'status';
-      renderSummary(allCards);
-      renderList();
+      renderList(); // renderList 內部會呼叫 renderSummary，總覽數字會跟著搜尋/篩選變動
     } catch (err) {
       setStatus(inventoryStatus, 'error', '載入失敗: ' + err.message);
     }
@@ -823,7 +833,11 @@
   }
 
   // 股票 App 風格的總覽：總成本 / 總市值 / 未實現損益% / 已實現損益
-  function renderSummary(cards) {
+  // isFiltered=true 時代表這是搜尋/篩選後的子集合，不是全部庫存
+  function renderSummary(cards, isFiltered) {
+    document.getElementById('sumFilterNote').textContent =
+      isFiltered ? `📍 目前只計算搜尋/篩選後的 ${cards.length} 張卡，不是全部庫存` : '';
+
     const inStock = cards.filter(c => c.status !== '已售出');
     const sold = cards.filter(c => c.status === '已售出');
 
@@ -870,6 +884,11 @@
     }
   }
 
+  function getProfitValue(c) {
+    const v = c.status === '已售出' ? c.realizedProfitPct : c.profitPct;
+    return (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+  }
+
   function renderList() {
     const kw = searchInput.value.trim().toLowerCase();
     const st = statusFilter.value;
@@ -881,12 +900,23 @@
       return hay.includes(kw);
     });
 
+    // 總覽卡片改成只算「目前搜尋/篩選出來」的這批卡，不是全部庫存
+    renderSummary(filtered, !!kw || st !== 'all');
+
     if (sortBy === 'certAsc') {
       filtered.sort((a, b) => (Number(a.certNumber) || 0) - (Number(b.certNumber) || 0));
     } else if (sortBy === 'yearAsc') {
       filtered.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
     } else if (sortBy === 'yearDesc') {
       filtered.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0));
+    } else if (sortBy === 'profitDesc' || sortBy === 'profitAsc') {
+      filtered.sort((a, b) => {
+        const pa = getProfitValue(a), pb = getProfitValue(b);
+        if (pa === null && pb === null) return 0;
+        if (pa === null) return 1;  // 沒有損益資料的排最後
+        if (pb === null) return -1;
+        return sortBy === 'profitDesc' ? pb - pa : pa - pb;
+      });
     }
     // sortBy === 'default' 時維持後端回傳的順序（新增時間新→舊）
 
@@ -925,6 +955,7 @@
       const priceQuery = encodeURIComponent(`${c.cardTitle || ''} ${c.setInfo || ''}`.trim());
       const ebayUrl = `https://www.ebay.com/sch/i.html?_nkw=${priceQuery}&LH_Sold=1&LH_Complete=1`;
       const googleUrl = `https://www.google.com/search?q=${priceQuery}+相場`;
+      const gotcgsUrl = `https://gotcgs.com/search?q=${priceQuery}`;
 
       const metaParts = [c.year, c.certNumber || '-', c.cardNumber, c.grade || '-', c.setInfo]
         .filter(v => v !== '' && v !== undefined && v !== null);
@@ -940,10 +971,13 @@
               <span>${rightLabel} ${rightAmount}</span>
               ${profitHtml}
             </div>
+            <div class="item-links">
+              <a class="link" href="${c.psaUrl}" target="_blank">PSA</a>
+              <a class="link" href="${gotcgsUrl}" target="_blank">GO TCGS</a>
+              <a class="link" href="${ebayUrl}" target="_blank">eBay</a>
+              <a class="link" href="${googleUrl}" target="_blank">查行情</a>
+            </div>
             <div class="item-actions">
-              <a class="link" href="${c.psaUrl}" target="_blank"><button class="secondary small" type="button">PSA 官網</button></a>
-              <a class="link" href="${ebayUrl}" target="_blank"><button class="secondary small" type="button">eBay 已售出</button></a>
-              <a class="link" href="${googleUrl}" target="_blank"><button class="secondary small" type="button">查行情</button></a>
               ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleValueForm('${c.id}')">編輯市值</button>`}
               ${isSold ? '' : `<button class="secondary small" type="button" onclick="toggleSoldForm('${c.id}')">標記售出</button>`}
               <button class="danger small" type="button" onclick="handleDelete('${c.id}')">刪除</button>
