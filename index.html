@@ -283,6 +283,7 @@
       <select id="sortSelect">
         <option value="default">排序：新增時間</option>
         <option value="certAsc">排序：PSA編號（小→大）</option>
+        <option value="certDesc">排序：PSA編號（大→小）</option>
         <option value="yearAsc">排序：年份（舊→新）</option>
         <option value="yearDesc">排序：年份（新→舊）</option>
         <option value="profitDesc">排序：損益%（高→低）</option>
@@ -940,6 +941,8 @@
 
     if (sortBy === 'certAsc') {
       filtered.sort((a, b) => (Number(a.certNumber) || 0) - (Number(b.certNumber) || 0));
+    } else if (sortBy === 'certDesc') {
+      filtered.sort((a, b) => (Number(b.certNumber) || 0) - (Number(a.certNumber) || 0));
     } else if (sortBy === 'yearAsc') {
       filtered.sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
     } else if (sortBy === 'yearDesc') {
